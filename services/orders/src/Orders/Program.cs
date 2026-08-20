@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Orders;
 using Orders.Api;
 using Orders.Persistence;
 using Wolverine;
@@ -29,6 +30,7 @@ builder.Services.AddDbContextWithWolverineIntegration<OrdersDbContext>(
 // chosen instant instead of at whatever time the test happens to run.
 builder.Services.AddSingleton(TimeProvider.System);
 
+builder.Services.AddTelemetry(builder.Configuration, "orders");
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 
@@ -63,9 +65,10 @@ builder.Host.UseWolverine(opts =>
     // The consumer is a different runtime with a different deserialiser, and a
     // topic whose payload shape depends on a header is a contract that only
     // holds by convention.
-    opts.PublishMessage<OrderPlaced>().ToKafkaTopic("orders.placed");
-    opts.PublishMessage<OrderConfirmed>().ToKafkaTopic("orders.confirmed");
-    opts.PublishMessage<OrderCancelled>().ToKafkaTopic("orders.cancelled");
+    var wireFormat = new OrderEventKafkaMapper();
+    opts.PublishMessage<OrderPlaced>().ToKafkaTopic("orders.placed").UseInterop(wireFormat);
+    opts.PublishMessage<OrderConfirmed>().ToKafkaTopic("orders.confirmed").UseInterop(wireFormat);
+    opts.PublishMessage<OrderCancelled>().ToKafkaTopic("orders.cancelled").UseInterop(wireFormat);
 });
 
 var app = builder.Build();

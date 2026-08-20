@@ -1,7 +1,10 @@
+using Gateway;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddTelemetry(builder.Configuration, "gateway");
 
 builder.Services
     .AddReverseProxy()

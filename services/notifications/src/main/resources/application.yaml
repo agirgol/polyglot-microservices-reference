@@ -14,6 +14,12 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      # Turns each consumed record into a Micrometer observation, which is what
+      # reads the `traceparent` header and continues the producer's trace. Off
+      # by default: without it the consumer is instrumented and every message
+      # still starts a brand new trace.
+      observation-enabled: true
 
   data:
     redis:
@@ -21,6 +27,31 @@ spring:
       port: ${REDIS_PORT:6379}
 
 management:
+  tracing:
+    sampling:
+      # Everything. This is a reference architecture whose claim is that one
+      # request produces one trace; sampling would make that true only
+      # sometimes, which is the same as not being able to show it.
+      probability: 1.0
+
+  # The current property path. `management.otlp.tracing.endpoint` also exists and
+  # is the Boot 3 spelling, kept for compatibility — using it here left the
+  # tracer running and exporting nowhere, with no error to say so.
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACES_ENDPOINT}
+
+  # The tracing starter also brings an OTLP meter registry, which then tries to
+  # push metrics to the same host on /v1/metrics. Jaeger does not accept
+  # metrics and answers 404 once a minute, forever. Prometheus already scrapes
+  # this service; it does not need a second path out.
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
   endpoints:
     web:
       exposure:

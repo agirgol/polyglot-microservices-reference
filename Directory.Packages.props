@@ -34,6 +34,11 @@
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.29.1" />
   </ItemGroup>
 
+  <!--
+    No EF Core instrumentation: it is only published as a prerelease, and the
+    claim this stack has to support is that one trace spans two runtimes, which
+    does not need a span per SQL statement. Revisit when it ships stable.
+  -->
   <ItemGroup Label="Observability">
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />

@@ -67,7 +67,7 @@ not built yet.
 | Transactional outbox to Kafka | ✅ |
 | `notifications` — Spring Boot Kafka consumer, idempotent | ✅ |
 | `gateway` — YARP, rate limiting, destination health | ✅ |
-| One trace across both runtimes | ⬜ |
+| One trace across both runtimes | ✅ |
 | Testcontainers integration tests | ⬜ |
 | NBomber load profile | ⬜ |
 | Kubernetes manifests and Helm chart | ⬜ |
@@ -104,6 +104,38 @@ if it stops passing, the ADR is wrong.
 
 → [ADR 0002: An order and its event commit together, or neither does](docs/adr/0002-transactional-outbox-over-dual-write.md)
 
+## One trace, two runtimes
+
+The claim the repository exists to support. One `POST` through the gateway:
+
+```
++  0.0 ms  gateway        POST /orders/{**catch-all}
++  0.8 ms  gateway        POST                          ← YARP forwarding
++  1.1 ms  orders         POST /orders/
++  1.5 ms  orders         Orders.Features.PlaceOrder    ← Wolverine handler
++ 15.7 ms  orders         send                          ← published via the outbox
++282.0 ms  notifications  orders.placed process         ← Java consumer
++284.9 ms  notifications  set                           ← Redis claim
+```
+
+Seven spans, three services, one trace id, in Jaeger at
+[localhost:16686](http://localhost:16686).
+
+The 282 ms gap is not latency to fix. The event is written to Postgres inside
+the order's transaction and forwarded by a background sweep, so the trace shows
+the cost of the guarantee rather than hiding it.
+
+It nearly did not work, and would not have said so. Wolverine writes the trace
+context to a Kafka header called `parent-id` — W3C `traceparent` format, under a
+name that is not `traceparent`. OpenTelemetry's Java instrumentation reads the
+standard name, finds nothing, and starts a new trace. Both services report
+spans. Both look healthy. Every request lives in two traces.
+
+The fix belongs on the producer: W3C Trace Context exists so a consumer does not
+need to know what produced a message.
+
+→ [ADR 0007: One trace across two runtimes, and the header that nearly stopped it](docs/adr/0007-one-trace-across-two-runtimes.md)
+
 ## What goes on the wire
 
 Wolverine puts the message body on Kafka as plain JSON with no envelope around
@@ -113,12 +145,20 @@ it, which is what makes a Java consumer possible without a shared library:
 {"orderId":"01a020d4-…","customerId":"acme","currency":"TRY","total":59.7000,"lineCount":1,"placedAt":"…"}
 ```
 
-Metadata rides in Kafka headers. One of them is a problem worth stating before
-it is solved: the trace context is written to a header named `parent-id`, in W3C
-`traceparent` format but not under that name. OpenTelemetry's Java
-instrumentation looks for `traceparent`, so a trace will stop dead at the
-runtime boundary unless something bridges the two. That is a task for the
-tracing milestone, not a surprise to be discovered then.
+Every header is written deliberately by `OrderEventKafkaMapper` rather than
+inherited from the framework's defaults, because this is a cross-language
+contract and a contract nobody wrote down is whatever the library happened to do
+that release:
+
+```
+content-type: application/json
+event-type:   order.placed
+traceparent:  00-5c7af58143f340974623d19af986fd47-…-01
+```
+
+`event-type` rather than `message-type: Orders.Domain.OrderPlaced` — a consumer
+in another language has no business knowing this one's namespace, and moving a
+class here should not rename anything there.
 
 ## Across the boundary
 
