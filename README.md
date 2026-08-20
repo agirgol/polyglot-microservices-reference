@@ -64,7 +64,7 @@ not built yet.
 | Compose stack: Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana | ✅ |
 | ADR 0001 — messaging library | ✅ |
 | `orders` — domain rules, EF Core 10, migrations, HTTP surface | ✅ |
-| Transactional outbox to Kafka | ⬜ |
+| Transactional outbox to Kafka | ✅ |
 | `notifications` — Spring Boot Kafka consumer | ⬜ |
 | `gateway` — YARP, resilience policies | ⬜ |
 | One trace across both runtimes | ⬜ |
@@ -72,16 +72,65 @@ not built yet.
 | NBomber load profile | ⬜ |
 | Kubernetes manifests and Helm chart | ⬜ |
 
+## The outbox, and how we found out it was not on
+
+An order and its event commit together or neither does. Outgoing messages are
+written to the same Postgres transaction that writes the order, then forwarded
+to Kafka.
+
+Configuring the storage is not the same as using it. Wolverine's sending
+endpoints are buffered in memory by default: the tables exist, stay empty, and
+a message that was "published" is gone if the process dies before the transport
+takes it. The setting that matters is the third line, and it was missing:
+
+```csharp
+opts.PersistMessagesWithPostgresql(connectionString, schemaName: "wolverine");
+opts.UseEntityFrameworkCoreTransactions();
+opts.Policies.UseDurableOutboxOnAllSendingEndpoints();   // <- this one
+```
+
+The way that surfaced is the way it should: stop Kafka, post an order, look at
+the outbox table. It was empty and the order was committed — an order that
+exists with nothing downstream ever hearing about it, which is the exact failure
+the outbox is for.
+
+```sh
+./ops/prove-outbox.sh
+```
+
+Stops the broker, posts an order, shows the event waiting in the outbox, starts
+the broker, shows the row clear and the message arrive. The claim is the script;
+if it stops passing, the ADR is wrong.
+
+→ [ADR 0002: An order and its event commit together, or neither does](docs/adr/0002-transactional-outbox-over-dual-write.md)
+
+## What goes on the wire
+
+Wolverine puts the message body on Kafka as plain JSON with no envelope around
+it, which is what makes a Java consumer possible without a shared library:
+
+```
+{"orderId":"01a020d4-…","customerId":"acme","currency":"TRY","total":59.7000,"lineCount":1,"placedAt":"…"}
+```
+
+Metadata rides in Kafka headers. One of them is a problem worth stating before
+it is solved: the trace context is written to a header named `parent-id`, in W3C
+`traceparent` format but not under that name. OpenTelemetry's Java
+instrumentation looks for `traceparent`, so a trace will stop dead at the
+runtime boundary unless something bridges the two. That is a task for the
+tracing milestone, not a surprise to be discovered then.
+
 ## Running `orders` on its own
 
 It is not in the compose file yet — that comes with its container image, in the
 messaging milestone. Until then:
 
 ```sh
-docker compose up -d postgres
+docker compose up -d postgres kafka
 dotnet ef database update --project services/orders/src/Orders \
   --connection "Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders"
 ConnectionStrings__Orders="Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders" \
+Kafka__BootstrapServers="localhost:29092" \
   dotnet run --project services/orders/src/Orders
 ```
 

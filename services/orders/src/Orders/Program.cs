@@ -2,7 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Orders.Api;
 using Orders.Persistence;
 using Wolverine;
+using Orders.Domain;
 using Wolverine.EntityFrameworkCore;
+using Wolverine.Kafka;
+using Wolverine.Postgresql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,10 +32,41 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 
-// Handler discovery only, for now. The durable outbox and the Kafka transport
-// arrive with the messaging milestone; the handlers are already shaped for them
-// because they return their events rather than sending them.
-builder.Host.UseWolverine();
+var kafkaBootstrapServers = builder.Configuration["Kafka:BootstrapServers"]
+    ?? throw new InvalidOperationException(
+        "Kafka:BootstrapServers is not configured. Set it, or run the service through docker compose.");
+
+builder.Host.UseWolverine(opts =>
+{
+    // The outbox. Outgoing messages are written to the same Postgres the order
+    // is written to, inside the same transaction, and forwarded afterwards.
+    // Without this an order can commit and its event never leave — or the event
+    // can leave for an order that was rolled back. Both happen under load, and
+    // both are silent.
+    opts.PersistMessagesWithPostgresql(connectionString, schemaName: "wolverine");
+    opts.UseEntityFrameworkCoreTransactions();
+    opts.Policies.AutoApplyTransactions();
+
+    // Without this the outbox above is configured and unused. Wolverine's
+    // sending endpoints are buffered in memory by default: a message is handed
+    // to the transport after the transaction commits, and if the process dies
+    // in between it is simply gone. The storage exists either way — what makes
+    // it an outbox is that outgoing messages are written to it first.
+    //
+    // Discovered the way it should be: by stopping Kafka, posting an order, and
+    // finding the outgoing envelopes table empty.
+    opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
+
+    opts.UseKafka(kafkaBootstrapServers);
+
+    // One topic per event type rather than one topic carrying a type header.
+    // The consumer is a different runtime with a different deserialiser, and a
+    // topic whose payload shape depends on a header is a contract that only
+    // holds by convention.
+    opts.PublishMessage<OrderPlaced>().ToKafkaTopic("orders.placed");
+    opts.PublishMessage<OrderConfirmed>().ToKafkaTopic("orders.confirmed");
+    opts.PublishMessage<OrderCancelled>().ToKafkaTopic("orders.cancelled");
+});
 
 var app = builder.Build();
 
