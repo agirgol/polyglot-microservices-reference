@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using JasperFx;
+using JasperFx.CodeGeneration;
 using Orders;
 using Orders.Api;
 using Orders.Persistence;
@@ -59,6 +61,25 @@ builder.Host.UseWolverine(opts =>
     // finding the outgoing envelopes table empty.
     opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
 
+    /*
+     * Handlers are generated code either way. The question is when.
+     *
+     * Dynamic compiles them on first use. Static loads types written to disk by
+     * `dotnet run -- codegen write` and committed. Measured on the same machine
+     * against the same database, first request after start: 1.098 s dynamic,
+     * 0.430 s static. The second request is 12 ms either way.
+     *
+     * The 430 ms that remains is not Roslyn — it is EF building its model, the
+     * connection pool opening, and the request pipeline being jitted. See
+     * ADR 0010.
+     *
+     * Dynamic in development, because generated code that has to be regenerated
+     * by hand after every handler change is generated code that will be stale.
+     */
+    opts.CodeGeneration.TypeLoadMode = builder.Environment.IsDevelopment()
+        ? TypeLoadMode.Auto
+        : TypeLoadMode.Static;
+
     opts.UseKafka(kafkaBootstrapServers);
 
     // One topic per event type rather than one topic carrying a type header.
@@ -95,6 +116,30 @@ if (builder.Configuration.GetValue("Migrations:ApplyOnStartup", false))
 app.UseExceptionHandler();
 app.MapOrderEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+/*
+ * Commands only when asked for one.
+ *
+ * `dotnet run -- codegen write` is what writes the handler types this service
+ * loads in production, and RunJasperFxCommands is what makes it available. It
+ * also takes over the host lifecycle, and WebApplicationFactory drives the
+ * application by running this file and capturing the host that app.Run() would
+ * have started — so routing every start through it leaves the integration tests
+ * with "the server has not been started".
+ *
+ * Splitting on the arguments keeps both: the CLI when there is a command, the
+ * ordinary path when there is not.
+ */
+if (args.Length > 0)
+{
+    // Through Environment.ExitCode rather than by returning it. Returning an
+    // int from top-level statements makes the generated entry point
+    // `Task<int>`, and the host resolver WebApplicationFactory uses only
+    // recognises `void` and `Task` — so a failing codegen command would still
+    // report success, or the integration tests would not start. This keeps both.
+    Environment.ExitCode = await app.RunJasperFxCommands(args);
+    return;
+}
 
 app.Run();
 

@@ -1,3 +1,4 @@
+using JasperFx.CommandLine;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +25,23 @@ namespace Orders.IntegrationTests;
 /// </remarks>
 public sealed class OrdersUnderTest : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    static OrdersUnderTest()
+    {
+        /*
+         * Tells JasperFx that something other than its command line is starting
+         * the host.
+         *
+         * Program.cs only calls RunJasperFxCommands when it was given arguments,
+         * and a test gives it none — so this looks like it should not matter.
+         * It does: JasperFx installs itself when the assembly is used at all,
+         * and without this flag WebApplicationFactory ends up with a host whose
+         * services resolve and whose web server was never started. CreateClient
+         * then fails with "the server has not been started", several layers away
+         * from anything that mentions JasperFx.
+         */
+        JasperFxEnvironment.AutoStartHost = true;
+    }
+
     // The image goes to the constructor: Testcontainers 4.14 deprecated the
     // parameterless builders, on the grounds that a test should say which
     // version it ran against rather than inherit whatever the library defaulted

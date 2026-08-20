@@ -19,5 +19,6 @@ why. Being able to see what was tried and abandoned is most of the value.
 | [0007](0007-one-trace-across-two-runtimes.md) | One trace across two runtimes, and the header that nearly stopped it | Accepted |
 | [0008](0008-a-collector-after-all.md) | A collector after all — revisits 0007 once there were two backends | Accepted |
 | [0009](0009-testcontainers-over-mocks.md) | Real containers at the boundaries, not mocks | Accepted |
+| [0010](0010-handler-code-is-generated-at-build-time.md) | Handler code is generated before the process starts | Accepted |
 
 [0000-template.md](0000-template.md) is the shape to follow.
