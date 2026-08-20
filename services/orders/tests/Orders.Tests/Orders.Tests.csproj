@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!--
+      xUnit v3 runs on Microsoft.Testing.Platform: the test project is an
+      executable that hosts its own runner. The opt-in lives in global.json
+      ("test": { "runner": ... }), not here — the .NET 10 SDK reads it there and
+      the MSBuild properties that used to do this are no longer required.
+    -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Orders/Orders.csproj" />
+  </ItemGroup>
+
+</Project>

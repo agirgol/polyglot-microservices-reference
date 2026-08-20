@@ -63,7 +63,7 @@ not built yet.
 |---|---|
 | Compose stack: Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana | ✅ |
 | ADR 0001 — messaging library | ✅ |
-| `orders` — CQRS, EF Core 10, migrations | ⬜ |
+| `orders` — domain rules, EF Core 10, migrations, HTTP surface | ✅ |
 | Transactional outbox to Kafka | ⬜ |
 | `notifications` — Spring Boot Kafka consumer | ⬜ |
 | `gateway` — YARP, resilience policies | ⬜ |
@@ -71,6 +71,27 @@ not built yet.
 | Testcontainers integration tests | ⬜ |
 | NBomber load profile | ⬜ |
 | Kubernetes manifests and Helm chart | ⬜ |
+
+## Running `orders` on its own
+
+It is not in the compose file yet — that comes with its container image, in the
+messaging milestone. Until then:
+
+```sh
+docker compose up -d postgres
+dotnet ef database update --project services/orders/src/Orders \
+  --connection "Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders"
+ConnectionStrings__Orders="Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders" \
+  dotnet run --project services/orders/src/Orders
+```
+
+The service refuses to start without that connection string rather than falling
+back to a default, for the same reason the compose file has no datasource
+guesses in it.
+
+```sh
+dotnet test          # 12 domain tests, no database, no containers
+```
 
 ## Versions
 
