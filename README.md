@@ -233,7 +233,10 @@ true. `Order.Confirm` now reports whether anything changed, and the handler
 returns an empty `OutgoingMessages` when it did not. The retry still answers
 200; it just no longer announces anything.
 
-→ ADR 0006 will carry the idempotency decision and its TTL.
+→ [ADR 0006: Idempotency keyed on the business fact](docs/adr/0006-idempotent-consumers.md),
+which also records what happens when Redis is down — the consumer stalls for a
+minute per message, loses nothing, and reports itself healthy the whole time.
+The first two are acceptable and the third is not.
 
 ## The edge
 
