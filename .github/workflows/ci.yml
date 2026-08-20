@@ -1,5 +1,10 @@
 name: ci
 
+# Actions are pinned to a major tag, which floats within that major and is what
+# the actions themselves publish for. Pinning an exact tag here buys little —
+# the supply-chain answer is a commit SHA, and that is a decision about this
+# repository's threat model rather than about staying current.
+
 on:
   push:
     branches: [main]
@@ -14,10 +19,10 @@ jobs:
     name: .NET — orders and gateway
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The version comes from global.json, so CI and a laptop cannot drift.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -37,14 +42,14 @@ jobs:
       run:
         working-directory: services/notifications
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build and test
         run: ./gradlew build
@@ -55,7 +60,7 @@ jobs:
     # No point scanning images for a commit whose code does not compile.
     needs: [dotnet, java]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Builds all three service images exactly as compose does, so a Dockerfile
       # that only works on the author's machine fails here rather than on the
@@ -64,7 +69,7 @@ jobs:
         run: docker compose build
 
       - name: Scan for known vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: polyglot-reference-orders:latest
           format: table
