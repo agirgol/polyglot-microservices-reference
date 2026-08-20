@@ -32,7 +32,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     // Micrometer's tracing bridge rather than the OpenTelemetry Java agent. The
     // agent instruments more for less code, but it is a separate artifact that

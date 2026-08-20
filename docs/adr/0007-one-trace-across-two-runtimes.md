@@ -108,3 +108,8 @@ repeated in every future consumer.
 it decouples applications from backends and moves sampling out of them. Left out
 because this system has one backend and one sampling rate, so the collector
 would be a container that forwards.
+
+> Revisited in [ADR 0008](0008-a-collector-after-all.md). The premise did not
+> survive metrics: there are two backends, and exporting to both from every
+> service was the problem the collector solves. The reasoning above is left as
+> it was written — it was right about the system it described.

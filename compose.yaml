@@ -78,8 +78,6 @@ services:
     image: jaegertracing/jaeger:2.10.0
     ports:
       - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
     # Asks the query service for a page rather than asking whether a binary
     # exists on disk. The v1 image's binary path does not exist in v2 anyway,
     # and "the process started" was never the question — services will post
@@ -89,6 +87,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Everything's telemetry goes here, and only here. See ops/otel/collector.yaml.
+  otel-collector:
+    image: otel/opentelemetry-collector:0.140.0
+    command: ["--config=/etc/otel/collector.yaml"]
+    volumes:
+      - ./ops/otel/collector.yaml:/etc/otel/collector.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      jaeger:
+        condition: service_healthy
 
   prometheus:
     image: prom/prometheus:v3.9.0
@@ -113,6 +124,85 @@ services:
     depends_on:
       - prometheus
       - jaeger
+
+  # ---- the services themselves ----------------------------------------------
+  #
+  # Each waits for what it needs to be *healthy*, not merely started. Kafka in
+  # particular accepts connections well before it accepts a produce, and a
+  # service that starts into that window fails in a way that reads like a bug in
+  # the service.
+
+  orders:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Orders: Host=postgres;Port=5432;Database=orders;Username=orders;Password=orders
+      Kafka__BootstrapServers: kafka:9092
+      Otlp__Endpoint: http://otel-collector:4317
+      # See the comment in Program.cs. On here because this file is the one
+      # place where a single instance starting once is guaranteed.
+      Migrations__ApplyOnStartup: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/health >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  notifications:
+    build:
+      context: services/notifications
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/actuator/health >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    # The way in. Everything else is exposed for looking at, not for calling.
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Otlp__Endpoint: http://otel-collector:4317
+      ReverseProxy__Clusters__orders__Destinations__primary__Address: http://orders:8080/
+      ReverseProxy__Clusters__orders__Destinations__primary__Health: http://orders:8080/health
+    depends_on:
+      orders:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/health >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   postgres-data:

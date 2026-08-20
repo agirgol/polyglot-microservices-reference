@@ -1,6 +1,9 @@
-# The three services scrape targets are declared before the services exist.
-# Prometheus reports them as down until they do, which is the honest state and
-# is also how you find out a service stopped exposing metrics.
+# One target, not four.
+#
+# Every service pushes OTLP to the collector, and the collector holds the
+# current values for Prometheus to scrape. Scraping each service directly would
+# mean each runtime needing its own Prometheus endpoint — an actuator path in
+# Spring, and in .NET a package that is still prerelease.
 
 global:
   scrape_interval: 10s
@@ -11,17 +14,6 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  - job_name: orders
-    metrics_path: /metrics
+  - job_name: services
     static_configs:
-      - targets: ["orders:8080"]
-
-  - job_name: gateway
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["gateway:8080"]
-
-  - job_name: notifications
-    metrics_path: /actuator/prometheus
-    static_configs:
-      - targets: ["notifications:8080"]
+      - targets: ["otel-collector:8889"]

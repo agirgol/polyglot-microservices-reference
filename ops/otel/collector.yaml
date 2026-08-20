@@ -1,0 +1,54 @@
+# One way out of every service, two backends behind it.
+#
+# Before this existed, each service exported straight to Jaeger. That works for
+# traces and quietly does not for metrics: Jaeger is a trace store, so metrics
+# pushed at it are refused or discarded. The .NET services had no /metrics
+# endpoint either, so their metrics reached nothing at all and nothing said so.
+#
+# The collector is what makes "send telemetry" one decision instead of one per
+# signal per runtime. Services know one address; where a signal ends up is
+# configuration here, not a dependency there.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Batching is the collector's main job on the wire: without it every span is
+  # its own request to the backend.
+  batch:
+    timeout: 2s
+    send_batch_size: 512
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      # Inside the compose network, over a bridge nobody else is on. In a real
+      # deployment this is where the certificate goes.
+      insecure: true
+
+  # Pull, not push: the collector holds the current values and Prometheus
+  # scrapes them, which is how Prometheus expects to work.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+
+  telemetry:
+    logs:
+      level: warn

@@ -36,18 +36,35 @@ Wolverine, which is MIT and does both jobs against Kafka.
 docker compose up -d
 ```
 
-That is the whole setup. Every image is pinned to an exact version rather than a
-moving tag, because a reference architecture that behaves differently depending
-on the day you cloned it is not a reference.
+That is the whole setup: ten containers, three of them built from this
+repository, healthy in under twenty seconds. Every image is pinned to an exact
+version rather than a moving tag, because a reference architecture that behaves
+differently depending on the day you cloned it is not a reference.
+
+```sh
+curl -X POST localhost:8080/orders -H 'Content-Type: application/json' \
+  -d '{"customerId":"acme","currency":"TRY",
+       "lines":[{"sku":"WIDGET-1","quantity":3,"unitPrice":19.90}]}'
+
+curl localhost:8082/notifications      # what the Java consumer did with it
+open http://localhost:16686            # and the one trace it all happened on
+```
 
 | | |
 |---|---|
+| **Gateway — the way in** | http://localhost:8080 |
+| Orders, directly | http://localhost:8081 |
+| Notifications, directly | http://localhost:8082 |
 | Jaeger | http://localhost:16686 |
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3000 |
 | Postgres | `localhost:5432`, `orders` / `orders` |
 | Kafka | `localhost:29092` from the host, `kafka:9092` inside |
 | Redis | `localhost:6379` |
+
+Services wait for what they need to be *healthy*, not merely started. Kafka
+accepts connections well before it accepts a produce, and a service that starts
+into that window fails in a way that reads like a bug in the service.
 
 Kafka advertises two listeners on purpose: one address is reachable from inside
 the compose network and a different one from your machine, and a single listener
@@ -61,7 +78,7 @@ not built yet.
 
 | | |
 |---|---|
-| Compose stack: Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana | ✅ |
+| Compose stack, all three services included, one command | ✅ |
 | ADR 0001 — messaging library | ✅ |
 | `orders` — domain rules, EF Core 10, migrations, HTTP surface | ✅ |
 | Transactional outbox to Kafka | ✅ |
@@ -135,6 +152,25 @@ The fix belongs on the producer: W3C Trace Context exists so a consumer does not
 need to know what produced a message.
 
 → [ADR 0007: One trace across two runtimes, and the header that nearly stopped it](docs/adr/0007-one-trace-across-two-runtimes.md)
+
+## One address for telemetry, two backends behind it
+
+Every service exports OTLP to a collector, which sends traces to Jaeger and
+holds metrics for Prometheus to scrape.
+
+That was not the first design. Each service exported straight to Jaeger, which
+is fine for traces and silently wrong for metrics: Jaeger is a trace store. The
+Java service was caught pushing metrics at it and getting a 404 once a minute.
+The .NET services were quieter — they had no metrics endpoint at all, so theirs
+reached nothing, and the only symptom was Prometheus listing them as `down`.
+
+The local fix would have been a `/metrics` endpoint in .NET, whose package is
+still prerelease. The collector is the fix that does not need one, and makes
+both runtimes do the same thing.
+
+→ [ADR 0008: A collector after all](docs/adr/0008-a-collector-after-all.md),
+which revisits the alternative [ADR 0007](docs/adr/0007-one-trace-across-two-runtimes.md)
+rejected when there was only one backend.
 
 ## What goes on the wire
 
@@ -237,11 +273,12 @@ It is not in the compose file yet — that comes with its container image, in th
 messaging milestone. Until then:
 
 ```sh
-docker compose up -d postgres kafka
+docker compose up -d postgres kafka otel-collector
 dotnet ef database update --project services/orders/src/Orders \
   --connection "Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders"
 ConnectionStrings__Orders="Host=localhost;Port=5432;Database=orders;Username=orders;Password=orders" \
 Kafka__BootstrapServers="localhost:29092" \
+Otlp__Endpoint="http://localhost:4317" \
   dotnet run --project services/orders/src/Orders
 ```
 
@@ -265,9 +302,10 @@ It proxies `/orders/**` to the orders service and needs it running.
 ## Running `notifications`
 
 ```sh
-docker compose up -d kafka redis
+docker compose up -d kafka redis otel-collector
 cd services/notifications
-KAFKA_BOOTSTRAP_SERVERS=localhost:29092 REDIS_HOST=localhost ./gradlew bootRun
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092 REDIS_HOST=localhost \
+  OTLP_ENDPOINT=http://localhost:4318 ./gradlew bootRun
 ```
 
 ```sh

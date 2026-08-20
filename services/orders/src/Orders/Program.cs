@@ -73,6 +73,25 @@ builder.Host.UseWolverine(opts =>
 
 var app = builder.Build();
 
+/*
+ * Applying migrations from the service is a convenience, not a pattern, and the
+ * flag is how that stays visible. It is off unless something turns it on, and
+ * the only thing that turns it on is the compose file.
+ *
+ * With more than one replica this is a race: several instances start, all see
+ * pending migrations, all try to apply them. EF takes an advisory lock so the
+ * losers wait rather than corrupt anything, but the losers are also blocking
+ * their own startup on a migration they are not running. In production this
+ * belongs in a step that runs once — a job, an init container, or a migration
+ * bundle — before any instance starts.
+ */
+if (builder.Configuration.GetValue("Migrations:ApplyOnStartup", false))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<OrdersDbContext>()
+        .Database.MigrateAsync();
+}
+
 app.UseExceptionHandler();
 app.MapOrderEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));

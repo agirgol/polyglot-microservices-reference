@@ -2,9 +2,9 @@
   Every NuGet version lives here and nowhere else.
 
   Central package management, so a version can be read and changed in one place
-  rather than found by grepping csproj files. CLAUDE.md carries the rule that
-  goes with it: no package is bumped to "latest" as a side effect of another
-  change.
+  rather than found by grepping csproj files. CONTRIBUTING.md carries the rule
+  that goes with it: no package is bumped to "latest" as a side effect of
+  another change.
 -->
 <Project>
   <PropertyGroup>
