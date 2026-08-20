@@ -9,6 +9,7 @@
     <Project Path="services/orders/src/Orders/Orders.csproj" />
   </Folder>
   <Folder Name="/services/orders/tests/">
+    <Project Path="services/orders/tests/Orders.IntegrationTests/Orders.IntegrationTests.csproj" />
     <Project Path="services/orders/tests/Orders.Tests/Orders.Tests.csproj" />
   </Folder>
 </Solution>

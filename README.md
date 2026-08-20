@@ -50,6 +50,12 @@ curl localhost:8082/notifications      # what the Java consumer did with it
 open http://localhost:16686            # and the one trace it all happened on
 ```
 
+**[→ docs/walkthrough.md](docs/walkthrough.md)** checks every claim on this page
+from a terminal in about fifteen minutes — the outbox surviving a broker outage,
+the rate limiter's exact split, a dead destination failing in milliseconds, and
+one trace crossing both runtimes. Each step says what would have to be false for
+it to fail.
+
 | | |
 |---|---|
 | **Gateway — the way in** | http://localhost:8080 |
@@ -85,7 +91,7 @@ not built yet.
 | `notifications` — Spring Boot Kafka consumer, idempotent | ✅ |
 | `gateway` — YARP, rate limiting, destination health | ✅ |
 | One trace across both runtimes | ✅ |
-| Testcontainers integration tests | ⬜ |
+| Testcontainers integration tests | ✅ |
 | NBomber load profile | ⬜ |
 | Kubernetes manifests and Helm chart | ⬜ |
 
@@ -320,6 +326,29 @@ artifacts: `org.springframework.kafka:spring-kafka` puts the classes on the
 classpath but registers no listener container, so `@KafkaListener` is ignored
 and the service starts perfectly while consuming nothing. The starter is
 `org.springframework.boot:spring-boot-starter-kafka`.
+
+## Tests
+
+```sh
+dotnet test                       # 16: 13 domain, 3 against real containers
+cd services/notifications && ./gradlew build
+```
+
+The 13 run in milliseconds against nothing — a type that needs infrastructure to
+prove its own rules has the rules in the wrong place. The 3 start Postgres and
+Kafka and take about three minutes, and what they assert is mostly the wire
+contract: `event-type: order.placed` rather than a .NET type name, a
+`traceparent` header in W3C form, `59.7000` surviving the round trip at its
+scale, and one `orders.confirmed` event for two confirmations.
+
+They check the contract because the contract was wrong for several commits, and
+a mocked broker would have agreed with it.
+
+→ [ADR 0009: Real containers at the boundaries, not mocks](docs/adr/0009-testcontainers-over-mocks.md)
+
+CI runs both stacks, then builds all three images and scans them — a Dockerfile
+that only works on the author's machine fails there rather than on the first
+person to clone it.
 
 ## Versions
 

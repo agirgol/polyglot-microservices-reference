@@ -6,11 +6,11 @@
 # starts Kafka, and shows the row clear as the message is delivered. The claim
 # in ADR 0002 is this script; if it stops passing, the ADR is wrong.
 #
-# Expects the orders service to be running against the compose Postgres and
-# Kafka. See the README.
+# Expects `docker compose up -d`. The orders service is on 8081 there; override
+# ORDERS_URL if you are running it from a terminal instead.
 set -euo pipefail
 
-ORDERS="${ORDERS_URL:-http://localhost:5169}"
+ORDERS="${ORDERS_URL:-http://localhost:8081}"
 COMPOSE="docker compose"
 PSQL="$COMPOSE exec -T postgres psql -U orders -d orders -t -A"
 
