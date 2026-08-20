@@ -1,0 +1,16 @@
+# Provisioned rather than clicked. A dashboard someone has to configure by hand
+# after cloning is a dashboard that is wrong by the second clone.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686

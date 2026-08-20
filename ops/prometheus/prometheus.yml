@@ -1,0 +1,27 @@
+# The three services scrape targets are declared before the services exist.
+# Prometheus reports them as down until they do, which is the honest state and
+# is also how you find out a service stopped exposing metrics.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: orders
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["orders:8080"]
+
+  - job_name: gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway:8080"]
+
+  - job_name: notifications
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["notifications:8080"]
