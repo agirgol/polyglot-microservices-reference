@@ -1,5 +1,9 @@
 <Solution>
   <Folder Name="/services/" />
+  <Folder Name="/services/gateway/" />
+  <Folder Name="/services/gateway/src/">
+    <Project Path="services/gateway/src/Gateway/Gateway.csproj" />
+  </Folder>
   <Folder Name="/services/orders/" />
   <Folder Name="/services/orders/src/">
     <Project Path="services/orders/src/Orders/Orders.csproj" />

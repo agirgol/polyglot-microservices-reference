@@ -66,7 +66,7 @@ not built yet.
 | `orders` — domain rules, EF Core 10, migrations, HTTP surface | ✅ |
 | Transactional outbox to Kafka | ✅ |
 | `notifications` — Spring Boot Kafka consumer, idempotent | ✅ |
-| `gateway` — YARP, resilience policies | ⬜ |
+| `gateway` — YARP, rate limiting, destination health | ✅ |
 | One trace across both runtimes | ⬜ |
 | Testcontainers integration tests | ⬜ |
 | NBomber load profile | ⬜ |
@@ -153,6 +153,44 @@ returns an empty `OutgoingMessages` when it did not. The retry still answers
 
 → ADR 0006 will carry the idempotency decision and its TTL.
 
+## The edge
+
+`gateway` is YARP 2.3: one address in front of the services, rate limiting, and
+destination health.
+
+Its resilience is not a retry policy, and that was a correction rather than a
+choice. The plan called for `Microsoft.Extensions.Http.Resilience`, which hangs
+Polly pipelines off `IHttpClientFactory` — and YARP forwards through its own
+`IForwarderHttpClientFactory`, so the extension methods have nothing to attach
+to. Injecting a handler anyway is possible and is the wrong shape: retrying at
+that layer sends the same request back to the destination that just failed. A
+proxy should send it elsewhere and remember the first one is sick.
+
+So: active probes, passive marking, a reactivation period. Measured with the
+orders service stopped —
+
+```
+attempt 1: HTTP 502  (0.009s)
+attempt 2: HTTP 502  (0.003s)
+attempt 3: HTTP 502  (0.003s)
+```
+
+— fast failure rather than a hang, and 200s again within two seconds of the
+service coming back.
+
+Rate limiting is a fixed window per client address. 150 concurrent requests
+against a 100-per-10-second window:
+
+```
+100  200
+ 50  429      each carrying Retry-After: 10
+```
+
+The package that could not be used was removed from the version list rather than
+left in place looking used.
+
+→ [ADR 0004: YARP at the edge, and resilience that is not a retry policy](docs/adr/0004-yarp-and-what-resilience-means-at-the-edge.md)
+
 ## Running `orders` on its own
 
 It is not in the compose file yet — that comes with its container image, in the
@@ -174,6 +212,15 @@ guesses in it.
 ```sh
 dotnet test          # 13 domain tests, no database, no containers
 ```
+
+## Running the gateway
+
+```sh
+dotnet run --project services/gateway/src/Gateway     # http://localhost:5178
+curl -X POST localhost:5178/orders -H 'Content-Type: application/json' -d '…'
+```
+
+It proxies `/orders/**` to the orders service and needs it running.
 
 ## Running `notifications`
 

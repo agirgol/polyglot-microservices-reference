@@ -42,9 +42,16 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
   </ItemGroup>
 
+  <!--
+    No Microsoft.Extensions.Http.Resilience here, though it was on the plan.
+    It hangs resilience pipelines off IHttpClientFactory, and YARP forwards
+    through its own IForwarderHttpClientFactory instead — the extension methods
+    do not reach it. Nothing else in this system calls another service over
+    HttpClient, so the package would have been referenced and unused. See
+    ADR 0004 for what replaces it.
+  -->
   <ItemGroup Label="Gateway">
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">
