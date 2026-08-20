@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Orders.Domain;
 using Orders.Persistence;
+using Wolverine;
 
 namespace Orders.Features;
 
@@ -17,9 +18,22 @@ public sealed class OrderNotFoundException(Guid orderId)
     public Guid OrderId { get; } = orderId;
 }
 
+/// <remarks>
+/// <para>
+/// Both handlers return <see cref="OutgoingMessages"/> rather than an event,
+/// and it is empty when nothing changed. A retried confirmation still answers
+/// 200 with the order's state — the caller asked for a state and got it — but
+/// it announces nothing, because nothing happened.
+/// </para>
+/// <para>
+/// The consumer deduplicates anyway; delivery is at-least-once and it has to.
+/// That is not a reason to publish an event saying an order was confirmed at a
+/// time it was not. A safety net catching a lie does not make it true.
+/// </para>
+/// </remarks>
 public static class ConfirmOrderHandler
 {
-    public static async Task<(OrderView, OrderConfirmed)> Handle(
+    public static async Task<(OrderView, OutgoingMessages)> Handle(
         ConfirmOrder command,
         OrdersDbContext database,
         TimeProvider clock,
@@ -30,18 +44,22 @@ public static class ConfirmOrderHandler
             ?? throw new OrderNotFoundException(command.OrderId);
 
         var confirmedAt = clock.GetUtcNow();
-        order.Confirm(confirmedAt);
+        var announcements = new OutgoingMessages();
+
+        if (order.Confirm(confirmedAt))
+        {
+            announcements.Add(new OrderConfirmed(order.Id, order.CustomerId, confirmedAt));
+        }
+
         await database.SaveChangesAsync(cancellationToken);
 
-        return (
-            GetOrderHandler.ToView(order),
-            new OrderConfirmed(order.Id, order.CustomerId, confirmedAt));
+        return (GetOrderHandler.ToView(order), announcements);
     }
 }
 
 public static class CancelOrderHandler
 {
-    public static async Task<(OrderView, OrderCancelled)> Handle(
+    public static async Task<(OrderView, OutgoingMessages)> Handle(
         CancelOrder command,
         OrdersDbContext database,
         TimeProvider clock,
@@ -52,11 +70,16 @@ public static class CancelOrderHandler
             ?? throw new OrderNotFoundException(command.OrderId);
 
         var cancelledAt = clock.GetUtcNow();
-        order.Cancel(command.Reason, cancelledAt);
+        var announcements = new OutgoingMessages();
+
+        if (order.Cancel(command.Reason, cancelledAt))
+        {
+            announcements.Add(
+                new OrderCancelled(order.Id, order.CustomerId, command.Reason, cancelledAt));
+        }
+
         await database.SaveChangesAsync(cancellationToken);
 
-        return (
-            GetOrderHandler.ToView(order),
-            new OrderCancelled(order.Id, order.CustomerId, command.Reason, cancelledAt));
+        return (GetOrderHandler.ToView(order), announcements);
     }
 }

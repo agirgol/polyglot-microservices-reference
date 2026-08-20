@@ -92,7 +92,14 @@ public sealed class Order
         return new Order(id, customerId, currency, lines, placedAt);
     }
 
-    public void Confirm(DateTimeOffset at)
+    /// <summary>Confirms the order. Returns false if it was already confirmed.</summary>
+    /// <remarks>
+    /// The answer matters to the caller: an event announcing a confirmation
+    /// that did not happen is a false statement on a topic other services act
+    /// on. A consumer deduplicating it is a safety net for at-least-once
+    /// delivery, not a licence to publish it.
+    /// </remarks>
+    public bool Confirm(DateTimeOffset at)
     {
         if (Status == OrderStatus.Cancelled)
         {
@@ -105,14 +112,16 @@ public sealed class Order
             // Confirming twice is what a retried request looks like, and the
             // second one asks for a state the order is already in. Refusing it
             // would make callers distinguish "failed" from "already done".
-            return;
+            return false;
         }
 
         Status = OrderStatus.Confirmed;
         SettledAt = at;
+        return true;
     }
 
-    public void Cancel(string reason, DateTimeOffset at)
+    /// <summary>Cancels the order. Returns false if it was already cancelled.</summary>
+    public bool Cancel(string reason, DateTimeOffset at)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -123,11 +132,12 @@ public sealed class Order
 
         if (Status == OrderStatus.Cancelled)
         {
-            return;
+            return false;
         }
 
         Status = OrderStatus.Cancelled;
         CancellationReason = reason;
         SettledAt = at;
+        return true;
     }
 }

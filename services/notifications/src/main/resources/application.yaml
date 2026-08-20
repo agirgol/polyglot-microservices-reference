@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: notifications
+
+  kafka:
+    # No default. A consumer pointed at a broker nobody meant to point it at
+    # joins a consumer group and starts taking messages off it.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: notifications
+      # Earliest, so a service started after the producer still sees what it
+      # missed. For notifications that is right; for a consumer whose backlog
+      # would mean thousands of stale emails it would not be.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+server:
+  port: 8080

@@ -65,7 +65,7 @@ not built yet.
 | ADR 0001 — messaging library | ✅ |
 | `orders` — domain rules, EF Core 10, migrations, HTTP surface | ✅ |
 | Transactional outbox to Kafka | ✅ |
-| `notifications` — Spring Boot Kafka consumer | ⬜ |
+| `notifications` — Spring Boot Kafka consumer, idempotent | ✅ |
 | `gateway` — YARP, resilience policies | ⬜ |
 | One trace across both runtimes | ⬜ |
 | Testcontainers integration tests | ⬜ |
@@ -120,6 +120,39 @@ instrumentation looks for `traceparent`, so a trace will stop dead at the
 runtime boundary unless something bridges the two. That is a task for the
 tracing milestone, not a surprise to be discovered then.
 
+## Across the boundary
+
+An order placed against the .NET service becomes a notification in the Java one,
+with no shared library and no code generation between them. The only thing
+holding the two together is the JSON on the topic, which is the point: the Java
+records are hand-written from the contract, so a field renamed on the .NET side
+does not fail to compile — it fails at runtime, and a test is what catches it.
+
+`total` crosses as `99.9000` and is read into a `BigDecimal`. A `double` would
+not hold it, on either side.
+
+Delivery is at-least-once, so the consumer has to be idempotent. It claims each
+event in Redis under the business fact — the order id and what happened to it —
+rather than under the producer's envelope id, which would only recognise a
+redelivery of that exact message. Measured on a run where the same order was
+confirmed twice:
+
+```
+orders.confirmed events on the topic     2
+notifications_handled_total              2      (placed + confirmed)
+notifications_suppressed_total           1
+```
+
+Which raised the better question: why were there two events? Confirming an
+already-confirmed order changed nothing, and the service announced it anyway —
+an event claiming a confirmation at a time the order was not confirmed. The
+consumer deduplicated it, and a safety net catching a lie does not make it
+true. `Order.Confirm` now reports whether anything changed, and the handler
+returns an empty `OutgoingMessages` when it did not. The retry still answers
+200; it just no longer announces anything.
+
+→ ADR 0006 will carry the idempotency decision and its TTL.
+
 ## Running `orders` on its own
 
 It is not in the compose file yet — that comes with its container image, in the
@@ -139,8 +172,29 @@ back to a default, for the same reason the compose file has no datasource
 guesses in it.
 
 ```sh
-dotnet test          # 12 domain tests, no database, no containers
+dotnet test          # 13 domain tests, no database, no containers
 ```
+
+## Running `notifications`
+
+```sh
+docker compose up -d kafka redis
+cd services/notifications
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092 REDIS_HOST=localhost ./gradlew bootRun
+```
+
+```sh
+curl localhost:8080/notifications          # what it would have sent
+curl localhost:8080/actuator/prometheus    # handled and suppressed counters
+```
+
+Two Spring Boot 4 changes worth knowing before they cost an afternoon. Jackson 3
+moved its package from `com.fasterxml.jackson` to `tools.jackson` — only the
+annotations stayed. And auto-configuration now lives in per-technology
+artifacts: `org.springframework.kafka:spring-kafka` puts the classes on the
+classpath but registers no listener container, so `@KafkaListener` is ignored
+and the service starts perfectly while consuming nothing. The starter is
+`org.springframework.boot:spring-boot-starter-kafka`.
 
 ## Versions
 

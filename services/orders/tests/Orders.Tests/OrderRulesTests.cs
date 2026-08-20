@@ -96,14 +96,30 @@ public class OrderRulesTests
     public void Confirming_twice_is_what_a_retry_looks_like_and_is_allowed()
     {
         var order = AnOrder(new OrderLine("W", 1, 1.00m));
-        order.Confirm(Now);
+        order.Confirm(Now).ShouldBeTrue();
         var firstSettlement = order.SettledAt;
 
-        order.Confirm(Now.AddMinutes(5));
+        // False, and that answer is what stops the handler announcing a
+        // confirmation that did not happen. A consumer would deduplicate the
+        // event, but the event would still be claiming a time the order was not
+        // confirmed at.
+        order.Confirm(Now.AddMinutes(5)).ShouldBeFalse();
 
         order.Status.ShouldBe(OrderStatus.Confirmed);
-        // The second call changed nothing, including when it settled.
         order.SettledAt.ShouldBe(firstSettlement);
+    }
+
+    [Fact]
+    public void Cancelling_twice_reports_that_the_second_call_changed_nothing()
+    {
+        var order = AnOrder(new OrderLine("W", 1, 1.00m));
+        order.Cancel("out of stock", Now).ShouldBeTrue();
+
+        order.Cancel("out of stock again", Now.AddMinutes(5)).ShouldBeFalse();
+
+        // The first reason stands. A cancellation has one cause, and it is the
+        // one that took effect.
+        order.CancellationReason.ShouldBe("out of stock");
     }
 
     [Fact]
