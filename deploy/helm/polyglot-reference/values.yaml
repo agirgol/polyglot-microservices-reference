@@ -1,0 +1,60 @@
+# Defaults describe a laptop. Everything an environment differs on is here.
+
+images:
+  # Pulled from nowhere by default: these are built locally by `docker compose
+  # build` and pushed to no registry. Set a repository and pullPolicy: IfNotPresent
+  # when there is one.
+  pullPolicy: Never
+  orders: polyglot-reference-orders:latest
+  notifications: polyglot-reference-notifications:latest
+  gateway: polyglot-reference-gateway:latest
+
+replicas:
+  orders: 2
+  gateway: 2
+  # One, and not a number to raise casually. Replicas share a consumer group and
+  # the group divides partitions; with one partition per topic a second replica
+  # is assigned nothing and idles while looking healthy. Partition the topics
+  # first. See docs/adr/0003.
+  notifications: 1
+
+# Single-replica Postgres, Kafka and Redis with no durable storage, so the
+# services have something to talk to on a laptop. Turn this off and point the
+# addresses below at an operator or a managed service — which is what should be
+# running them, because failover, rebalancing, backup and upgrade are exactly
+# what a Deployment does not do.
+infrastructure:
+  enabled: true
+
+# Telemetry is a collector and Jaeger. Prometheus and Grafana are not here:
+# they are how telemetry is looked at rather than part of the system.
+telemetry:
+  enabled: true
+
+postgres:
+  host: postgres
+  database: orders
+  username: orders
+  # In a values file in a public repository, which is what a password should
+  # never be. Legible on purpose — this is a throwaway on a local cluster, and
+  # base64ing it would only suggest base64 is a protection. Real deployments
+  # take it from a sealed secret or the cluster's own store.
+  password: orders
+
+kafka:
+  bootstrapServers: kafka:9092
+
+redis:
+  host: redis
+
+otlp:
+  grpc: http://otel-collector:4317
+  http: http://otel-collector:4318
+
+gateway:
+  # LoadBalancer because Docker Desktop maps it to localhost. On a real cluster
+  # this is an Ingress with a hostname and a certificate — at which point the
+  # rate limiter's client key must stop being the socket address. See
+  # docs/adr/0004.
+  serviceType: LoadBalancer
+  port: 8080

@@ -94,7 +94,7 @@ not built yet.
 | Testcontainers integration tests | ✅ |
 | NBomber load profile | ✅ |
 | Kubernetes manifests | ✅ |
-| Helm chart | ⬜ |
+| Helm chart | ✅ |
 
 ## The outbox, and how we found out it was not on
 
@@ -411,7 +411,12 @@ port; Spring refused to start because Kubernetes injects `REDIS_PORT` as a URL
 where it wants an integer; and a second `notifications` replica would have been
 an idle pod, because the consumer group divides partitions and there is one.
 
-→ [deploy/k8s/README.md](deploy/k8s/README.md)
+There is a chart too, and it earns its place on one point: the migration Job is
+a Helm hook, so an upgrade applies the schema and waits before it rolls the
+pods. A directory of manifests can only ask someone to do that in the right
+order.
+
+→ [deploy/k8s/README.md](deploy/k8s/README.md) · [deploy/helm/README.md](deploy/helm/README.md)
 
 ## Versions
 

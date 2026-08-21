@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-config
+data:
+  ConnectionStrings__Orders: >-
+    Host={{ .Values.postgres.host }};Port=5432;Database={{ .Values.postgres.database }};Username={{ .Values.postgres.username }};Password={{ .Values.postgres.password }}
+  Kafka__BootstrapServers: {{ .Values.kafka.bootstrapServers | quote }}
+  Otlp__Endpoint: {{ if .Values.telemetry.enabled }}{{ .Values.otlp.grpc | quote }}{{ else }}""{{ end }}
+  ASPNETCORE_URLS: http://+:8080
+  # False, always. The migration Job below is a pre-install and pre-upgrade
+  # hook, so the schema is current before any replica starts.
+  Migrations__ApplyOnStartup: "false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-config
+data:
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  OTLP_ENDPOINT: {{ .Values.otlp.http | quote }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+data:
+  ASPNETCORE_URLS: http://+:8080
+  Otlp__Endpoint: {{ if .Values.telemetry.enabled }}{{ .Values.otlp.grpc | quote }}{{ else }}""{{ end }}
+  ReverseProxy__Clusters__orders__Destinations__primary__Address: http://orders:8080/
+  ReverseProxy__Clusters__orders__Destinations__primary__Health: http://orders:8080/health
+
+{{- if .Values.infrastructure.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+stringData:
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.username | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgres.password | quote }}
+{{- end }}

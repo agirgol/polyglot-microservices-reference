@@ -1,0 +1,66 @@
+{{/*
+  The reason this chart exists rather than a directory of manifests.
+
+  As a hook, Helm runs this Job and waits for it to complete before it rolls the
+  Deployments on every upgrade. Plain manifests cannot say "apply the schema,
+  then roll the pods" — you apply the Job, watch it, and apply the rest by hand,
+  which is a runbook rather than a deployment.
+
+  Upgrades are the case that matters: that is when a schema change and a code
+  change arrive together, and when getting the order wrong means new code
+  against an old schema.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: orders-migrate
+  annotations:
+{{- if .Values.infrastructure.enabled }}
+    # post-install, because this chart is also installing the database. A
+    # pre-install hook runs before the chart's own resources exist, so there
+    # would be no Postgres to migrate. The services do start before the schema
+    # does — they answer /health without it and fail requests that need tables
+    # until the Job finishes, which is a few seconds and is the price of
+    # bundling a database with the application that uses it.
+    "helm.sh/hook": post-install,pre-upgrade
+{{- else }}
+    # The production shape: the database is somebody else's, already there, and
+    # the schema is current before a single new pod starts.
+    "helm.sh/hook": pre-install,pre-upgrade
+{{- end }}
+    "helm.sh/hook-weight": "-5"
+    # Deleted before the next one is created, and after a success. A failed Job
+    # is left behind on purpose: its logs are the only thing that explains why
+    # the release stopped.
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      {{- include "polyglot.podDefaults" . | nindent 6 }}
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: {{ .Values.images.orders | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          # Builds a host containing a DbContext and nothing else — not the
+          # application. Running the application to migrate starts a message bus
+          # and elects a leader, and the Job never exits.
+          args: ["migrate"]
+          # Its own connection string rather than the application's ConfigMap.
+          #
+          # A pre-install hook runs before the chart's own resources exist, so
+          # `envFrom: orders-config` leaves the pod in CreateContainerConfigError
+          # with "configmap not found" until the release times out — and the
+          # release never gets far enough to create it.
+          #
+          # Giving the Job only what it needs is also the honest shape: a
+          # migration wants a database, not the settings of a service it is not
+          # starting.
+          env:
+            - name: ConnectionStrings__Orders
+              value: >-
+                Host={{ .Values.postgres.host }};Port=5432;Database={{ .Values.postgres.database }};Username={{ .Values.postgres.username }};Password={{ .Values.postgres.password }}
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
