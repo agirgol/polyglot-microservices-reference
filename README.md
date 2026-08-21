@@ -93,7 +93,8 @@ not built yet.
 | One trace across both runtimes | ✅ |
 | Testcontainers integration tests | ✅ |
 | NBomber load profile | ✅ |
-| Kubernetes manifests and Helm chart | ⬜ |
+| Kubernetes manifests | ✅ |
+| Helm chart | ⬜ |
 
 ## The outbox, and how we found out it was not on
 
@@ -388,6 +389,29 @@ from 295 ms to 12 ms.
 
 Reports land in `load-reports/` as HTML, Markdown and CSV, and are gitignored —
 they are numbers from one machine on one day.
+
+## On a cluster
+
+```sh
+docker compose build
+kubectl apply -f deploy/k8s/
+kubectl -n polyglot-reference wait --for=condition=complete --timeout=180s job/orders-migrate
+```
+
+Verified on Docker Desktop's Kubernetes 1.34: the same request through the same
+gateway produces the same seven-span trace across the same three services.
+
+Migrations run in a Job rather than on startup, which is what the comment in
+`Program.cs` has been pointing at — every replica migrating is a race that EF's
+advisory lock survives and startup does not.
+
+Three things worked in compose and failed here, none of them saying why:
+Kafka could not reach its own controller through a Service that forwards one
+port; Spring refused to start because Kubernetes injects `REDIS_PORT` as a URL
+where it wants an integer; and a second `notifications` replica would have been
+an idle pod, because the consumer group divides partitions and there is one.
+
+→ [deploy/k8s/README.md](deploy/k8s/README.md)
 
 ## Versions
 

@@ -1,0 +1,94 @@
+# Migrations run once, in a Job, before any replica starts.
+#
+# This is what the comment in Program.cs points at. Applying migrations from the
+# service works with one instance and races with more than one: every replica
+# starts, all see pending migrations, all try to apply them. EF's advisory lock
+# stops that corrupting anything, and the losers then block their own startup on
+# a migration they are not running.
+#
+# The Job runs the same image with one argument. No second image, no bundle.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: orders-migrate
+  namespace: polyglot-reference
+spec:
+  # Retried, because the database may not be accepting connections yet. Bounded,
+  # because a migration that fails four times is failing for a reason retrying
+  # will not fix.
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      # See 50-notifications.yaml: Kubernetes' per-Service environment variables
+      # are a pre-DNS convention that collides with application config. Nothing
+      # here uses them.
+      enableServiceLinks: false
+      containers:
+        - name: migrate
+          image: polyglot-reference-orders:latest
+          imagePullPolicy: Never
+          args: ["migrate"]
+          envFrom:
+            - configMapRef: { name: orders-config }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: polyglot-reference
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: orders }
+  template:
+    metadata:
+      labels: { app: orders }
+    spec:
+      # See 50-notifications.yaml: Kubernetes' per-Service environment variables
+      # are a pre-DNS convention that collides with application config. Nothing
+      # here uses them.
+      enableServiceLinks: false
+      containers:
+        - name: orders
+          image: polyglot-reference-orders:latest
+          # Never: these images are built locally and pushed nowhere. A cluster
+          # that pulls would look for them in a registry and fail.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: orders-config }
+          # Readiness and liveness answer different questions.
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            # Slacker than readiness on purpose. Readiness taking a pod out of
+            # rotation is cheap and reversible; liveness restarts it, and a
+            # restart during a slow moment makes the slow moment worse.
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  namespace: polyglot-reference
+spec:
+  selector: { app: orders }
+  ports:
+    - port: 8080
+      targetPort: 8080

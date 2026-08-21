@@ -1,0 +1,54 @@
+# Addresses and switches in a ConfigMap; the one credential in a Secret.
+#
+# The Secret here is a plain value in a file committed to a public repository,
+# which is exactly what a Secret is not for. It is legible on purpose: this is a
+# local cluster with a throwaway password, and pretending otherwise by base64ing
+# it would suggest base64 is a protection. Real deployments take these from a
+# sealed secret, an external secrets operator, or the cloud's own store.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-config
+  namespace: polyglot-reference
+data:
+  ConnectionStrings__Orders: Host=postgres;Port=5432;Database=orders;Username=orders;Password=orders
+  Kafka__BootstrapServers: kafka:9092
+  Otlp__Endpoint: http://otel-collector:4317
+  ASPNETCORE_URLS: http://+:8080
+  # Off. A Job applies migrations once; see 40-orders.yaml.
+  Migrations__ApplyOnStartup: "false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-config
+  namespace: polyglot-reference
+data:
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  REDIS_HOST: redis
+  OTLP_ENDPOINT: http://otel-collector:4318
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: polyglot-reference
+data:
+  ASPNETCORE_URLS: http://+:8080
+  Otlp__Endpoint: http://otel-collector:4317
+  ReverseProxy__Clusters__orders__Destinations__primary__Address: http://orders:8080/
+  ReverseProxy__Clusters__orders__Destinations__primary__Health: http://orders:8080/health
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: polyglot-reference
+stringData:
+  POSTGRES_DB: orders
+  POSTGRES_USER: orders
+  POSTGRES_PASSWORD: orders

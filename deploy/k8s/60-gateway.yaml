@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: polyglot-reference
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      # See 50-notifications.yaml: Kubernetes' per-Service environment variables
+      # are a pre-DNS convention that collides with application config. Nothing
+      # here uses them.
+      enableServiceLinks: false
+      containers:
+        - name: gateway
+          image: polyglot-reference-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: gateway-config }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 200m, memory: 192Mi }
+            limits: { memory: 384Mi }
+---
+# The way in. LoadBalancer because Docker Desktop maps it to localhost; on a
+# real cluster this is an Ingress with a hostname and a certificate, and the
+# rate limiter's client key stops being the socket address (ADR 0004).
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: polyglot-reference
+spec:
+  type: LoadBalancer
+  selector: { app: gateway }
+  ports:
+    - port: 8080
+      targetPort: 8080

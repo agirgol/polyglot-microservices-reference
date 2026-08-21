@@ -25,6 +25,28 @@ var connectionString = builder.Configuration.GetConnectionString("Orders")
 // AddDbContext forces because EF registers DbContextOptions through an opaque
 // lambda factory. This registration is also what the transactional outbox will
 // hook into, so the context and the outgoing messages share one transaction.
+/*
+ * `migrate` applies the schema and exits, so a deployment can run migrations
+ * once — a Kubernetes Job, an init container, a release step — instead of every
+ * replica racing to do it on startup.
+ *
+ * It builds a host containing a DbContext and nothing else. The first version
+ * of this ran after the application had been built, which meant migrating also
+ * started a message bus: the Job's logs filled with a Wolverine node assuming
+ * leadership and a Kafka producer retrying a broker the Job has no business
+ * talking to, and the pod never exited. A migration needs a connection string
+ * and a schema, not an application.
+ */
+if (args is ["migrate"])
+{
+    var migrations = Host.CreateApplicationBuilder(args);
+    migrations.Services.AddDbContext<OrdersDbContext>(o => o.UseNpgsql(connectionString));
+
+    using var scope = migrations.Build().Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
+    return;
+}
+
 builder.Services.AddDbContextWithWolverineIntegration<OrdersDbContext>(
     options => options.UseNpgsql(connectionString));
 
