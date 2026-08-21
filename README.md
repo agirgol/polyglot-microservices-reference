@@ -92,7 +92,7 @@ not built yet.
 | `gateway` — YARP, rate limiting, destination health | ✅ |
 | One trace across both runtimes | ✅ |
 | Testcontainers integration tests | ✅ |
-| NBomber load profile | ⬜ |
+| NBomber load profile | ✅ |
 | Kubernetes manifests and Helm chart | ⬜ |
 
 ## The outbox, and how we found out it was not on
@@ -352,6 +352,42 @@ a mocked broker would have agreed with it.
 CI runs both stacks, then builds all three images and scans them — a Dockerfile
 that only works on the author's machine fails there rather than on the first
 person to clone it.
+
+## Under load
+
+```sh
+docker compose up -d
+dotnet run --project services/orders/tests/Orders.LoadTests
+```
+
+Injected arrival rates rather than a thread count — what a service experiences
+is requests arriving, not workers spinning. One machine, Docker Desktop,
+everything on one laptop:
+
+| | rate | p50 | p95 | p99 | max | failed |
+|---|---|---|---|---|---|---|
+| `place_order` | 20→60/s | 2.9 ms | 7.0 ms | 9.4 ms | 14 ms | 0 |
+| `read_order` | 100/s | 1.7 ms | 4.9 ms | 8.3 ms | 12 ms | 0 |
+
+`place_order` writes the order, its line and an outbox envelope in one
+transaction, so every order placed is also a message durably stored. That it
+costs about a millisecond more at p50 than a read is the price of ADR 0002,
+measured.
+
+The profile runs against the orders service directly, not the gateway. The
+gateway rate-limits to 100 requests per 10 seconds per client, so load through
+it measures the limiter — which is the limiter working, and not a fact about the
+service. Point `ORDERS_URL` at port 8080 to watch the 429s arrive on schedule
+instead.
+
+The first run of this reported a read p99 of 80 ms against a p50 of 1.4 ms,
+which was the measurement and not the service: warming through `/health` jitted
+the health endpoint and left each scenario paying its first-call cost inside the
+measured window. Each scenario warms its own path now, and the read maximum went
+from 295 ms to 12 ms.
+
+Reports land in `load-reports/` as HTML, Markdown and CSV, and are gitignored —
+they are numbers from one machine on one day.
 
 ## Versions
 

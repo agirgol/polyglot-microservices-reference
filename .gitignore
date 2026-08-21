@@ -20,6 +20,9 @@ build/
 # OS
 .DS_Store
 
+# Load test output — numbers from one machine on one day
+load-reports/
+
 # Local state
 .env
 

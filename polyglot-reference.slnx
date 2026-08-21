@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/services/orders/tests/">
     <Project Path="services/orders/tests/Orders.IntegrationTests/Orders.IntegrationTests.csproj" />
+    <Project Path="services/orders/tests/Orders.LoadTests/Orders.LoadTests.csproj" />
     <Project Path="services/orders/tests/Orders.Tests/Orders.Tests.csproj" />
   </Folder>
 </Solution>

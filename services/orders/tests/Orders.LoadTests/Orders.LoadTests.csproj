@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!--
+      Not a test project. `dotnet test` will not find it and should not: this
+      needs a running system, takes minutes, and answers with numbers rather
+      than pass or fail.
+    -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NBomber" />
+  </ItemGroup>
+
+</Project>
